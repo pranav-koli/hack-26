@@ -8,19 +8,29 @@ from diet import router as diet_router
 app = FastAPI(title="Disease Prediction API with Human Explainable AI")
 app.include_router(diet_router)
 
+# =========================
+# LOAD MODELS
+# =========================
 
-heart_rf = joblib.load("models/heart_rf_model.pkl")
-heart_knn = joblib.load("models/heart_knn.pkl")
-heart_knn_scaler = joblib.load("models/heart_knn_scaler.pkl")
-HEART_COLUMNS = joblib.load("models/heart_columns.pkl")
+heart_rf = joblib.load("heart_rf_model.pkl")
+heart_knn = joblib.load("heart_knn.pkl")
+heart_knn_scaler = joblib.load("heart_knn_scaler.pkl")
+HEART_COLUMNS = joblib.load("heart_columns.pkl")
 
-diabetes_lr = joblib.load("models/diabetes_lr_model.pkl")
-diabetes_knn = joblib.load("models/diabetes_knn_model.pkl")
-diabetes_scaler = joblib.load("models/diabetes_scaler.pkl")
-DIABETES_FEATURES = joblib.load("models/diabetes_features.pkl")
+# Diabetes models
+diabetes_lr = joblib.load("diabetes_lr_model.pkl")
+diabetes_knn = joblib.load("diabetes_knn_model.pkl")
+diabetes_rf = joblib.load("diabetes_rf_model.pkl")
 
+diabetes_scaler = joblib.load("diabetes_scaler.pkl")
+DIABETES_FEATURES = joblib.load("diabetes_features.pkl")
+
+# SHAP Explainer
 heart_rf_explainer = shap.TreeExplainer(heart_rf)
 
+# =========================
+# INPUT SCHEMAS
+# =========================
 
 class HeartInput(BaseModel):
     Age: int
@@ -47,8 +57,12 @@ class DiabetesInput(BaseModel):
     Age: int
 
 
+# =========================
+# HUMAN EXPLANATION
+# =========================
 
 def human_explanation(feature, impact):
+
     direction = "increases" if impact > 0 else "reduces"
 
     feature_map = {
@@ -64,93 +78,132 @@ def human_explanation(feature, impact):
     }
 
     readable = feature_map.get(feature, feature.replace("_", " "))
+
     return f"Your {readable} {direction} the risk of heart disease."
 
 
+# =========================
+# HEART PREDICTION
+# =========================
 
 @app.post("/predict/heart/{model_name}")
 def predict_heart(model_name: str, data: HeartInput):
 
-    X = pd.DataFrame([data.dict()])
-    X = pd.get_dummies(X)
-    X = X.reindex(columns=HEART_COLUMNS, fill_value=0)
+    try:
+        X = pd.DataFrame([data.dict()])
+        X = pd.get_dummies(X)
+        X = X.reindex(columns=HEART_COLUMNS, fill_value=0)
 
-    if model_name == "rf":
-        prediction = heart_rf.predict(X)[0]
-    elif model_name == "knn":
-        X_scaled = heart_knn_scaler.transform(X)
-        prediction = heart_knn.predict(X_scaled)[0]
-    else:
-        raise HTTPException(status_code=400, detail="Use rf or knn")
+        if model_name == "rf":
+            prediction = heart_rf.predict(X)[0]
+            probability = heart_rf.predict_proba(X)[0][1]
 
-    return {
-        "disease": "Heart Disease",
-        "model_used": model_name,
-        "prediction": int(prediction)
-    }
+        elif model_name == "knn":
+            X_scaled = heart_knn_scaler.transform(X)
+            prediction = heart_knn.predict(X_scaled)[0]
+            probability = heart_knn.predict_proba(X_scaled)[0][1]
+
+        else:
+            raise HTTPException(status_code=400, detail="Use rf or knn")
+
+        return {
+            "disease": "Heart Disease",
+            "model_used": model_name,
+            "prediction": int(prediction),
+            "probability": round(float(probability) * 100, 2)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
+# =========================
+# HEART + XAI
+# =========================
 
 @app.post("/predict-explain/heart/rf")
 def predict_explain_heart_rf(data: HeartInput):
 
-    X = pd.DataFrame([data.dict()])
-    X = pd.get_dummies(X)
-    X = X.reindex(columns=HEART_COLUMNS, fill_value=0)
+    try:
+        X = pd.DataFrame([data.dict()])
+        X = pd.get_dummies(X)
+        X = X.reindex(columns=HEART_COLUMNS, fill_value=0)
 
-    prediction = int(heart_rf.predict(X)[0])
-    probability = float(heart_rf.predict_proba(X)[0][1])
-    label = "Yes" if prediction == 1 else "No"
+        prediction = int(heart_rf.predict(X)[0])
+        probability = float(heart_rf.predict_proba(X)[0][1])
 
-    shap_values = heart_rf_explainer.shap_values(X)
-    shap_vals = shap_values[1] if isinstance(shap_values, list) else shap_values
-    shap_vals = shap_vals.reshape(-1)
+        label = "Yes" if prediction == 1 else "No"
 
-    explanations = []
-    for feature, impact in zip(HEART_COLUMNS, shap_vals):
-        explanations.append({
-            "reason": human_explanation(feature, impact),
-            "impact": round(float(impact), 4)
-        })
+        shap_values = heart_rf_explainer.shap_values(X)
 
-    explanations = sorted(
-        explanations,
-        key=lambda x: abs(x["impact"]),
-        reverse=True
-    )[:5]
+        if isinstance(shap_values, list):
+            shap_vals = shap_values[1][0]
+        else:
+            shap_vals = shap_values[0]
 
-    return {
-        "disease": "Heart Disease",
-        "prediction": label,
-        "probability": round(probability * 100, 2),
-        "xai": {
-            "method": "SHAP (Human-Friendly Explanation)",
-            "reasons": explanations
+        explanations = []
+
+        for feature, impact in zip(HEART_COLUMNS, shap_vals):
+            explanations.append({
+                "reason": human_explanation(feature, impact),
+                "impact": round(float(impact), 4)
+            })
+
+        explanations = sorted(
+            explanations,
+            key=lambda x: abs(x["impact"]),
+            reverse=True
+        )[:5]
+
+        return {
+            "disease": "Heart Disease",
+            "prediction": label,
+            "probability": round(probability * 100, 2),
+            "xai": {
+                "method": "SHAP Human Explanation",
+                "reasons": explanations
+            }
         }
-    }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
+# =========================
+# DIABETES PREDICTION
+# =========================
 
 @app.post("/predict/diabetes/{model_name}")
 def predict_diabetes(model_name: str, data: DiabetesInput):
 
-    X = pd.DataFrame([data.dict()])
+    try:
 
-    X = X[DIABETES_FEATURES]
+        X = pd.DataFrame([data.dict()])
+        X = X.reindex(columns=DIABETES_FEATURES, fill_value=0)
 
-    X_scaled = diabetes_scaler.transform(X)
+        X_scaled = diabetes_scaler.transform(X)
 
-    if model_name == "lr":
-        prediction = diabetes_lr.predict(X_scaled)[0]
+        if model_name == "lr":
+            prediction = diabetes_lr.predict(X_scaled)[0]
+            probability = diabetes_lr.predict_proba(X_scaled)[0][1]
 
-    elif model_name == "knn":
-        prediction = diabetes_knn.predict(X_scaled)[0]
+        elif model_name == "knn":
+            prediction = diabetes_knn.predict(X_scaled)[0]
+            probability = diabetes_knn.predict_proba(X_scaled)[0][1]
 
-    else:
-        raise HTTPException(status_code=400, detail="Use lr or knn")
+        elif model_name == "rf":
+            prediction = diabetes_rf.predict(X_scaled)[0]
+            probability = diabetes_rf.predict_proba(X_scaled)[0][1]
 
-    return {
-        "disease": "Diabetes",
-        "model_used": model_name,
-        "prediction": int(prediction)
-    }main.py
+        else:
+            raise HTTPException(status_code=400, detail="Use lr, knn or rf")
+
+        return {
+            "disease": "Diabetes",
+            "model_used": model_name,
+            "prediction": int(prediction),
+            "probability": round(float(probability) * 100, 2)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
