@@ -9,15 +9,15 @@ app = FastAPI(title="Disease Prediction API with Human Explainable AI")
 app.include_router(diet_router)
 
 
-heart_rf = joblib.load("models/heart_rf_model.pkl")
-heart_knn = joblib.load("models/heart_knn.pkl")
-heart_knn_scaler = joblib.load("models/heart_knn_scaler.pkl")
-HEART_COLUMNS = joblib.load("models/heart_columns.pkl")
+heart_rf = joblib.load("heart_rf_model.pkl")
+heart_knn = joblib.load("heart_knn.pkl")
+heart_knn_scaler = joblib.load("heart_knn_scaler.pkl")
+HEART_COLUMNS = joblib.load("heart_columns.pkl")
 
-diabetes_lr = joblib.load("models/diabetes_lr_model.pkl")
-diabetes_knn = joblib.load("models/diabetes_knn_model.pkl")
-diabetes_scaler = joblib.load("models/diabetes_scaler.pkl")
-DIABETES_FEATURES = joblib.load("models/diabetes_features.pkl")
+diabetes_lr = joblib.load("diabetes_lr_model.pkl")
+diabetes_knn = joblib.load("diabetes_knn_model.pkl")
+diabetes_scaler = joblib.load("diabetes_scaler.pkl")
+DIABETES_FEATURES = joblib.load("diabetes_features.pkl")
 
 heart_rf_explainer = shap.TreeExplainer(heart_rf)
 
