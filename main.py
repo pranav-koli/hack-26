@@ -12,10 +12,10 @@ app.include_router(diet_router)
 # LOAD MODELS
 # =========================
 
-heart_rf = joblib.load("models/heart_rf_model.pkl")
-heart_knn = joblib.load("models/heart_knn.pkl")
-heart_knn_scaler = joblib.load("models/heart_knn_scaler.pkl")
-HEART_COLUMNS = joblib.load("models/heart_columns.pkl")
+heart_rf = joblib.load("heart_rf_model.pkl")
+heart_knn = joblib.load("heart_knn.pkl")
+heart_knn_scaler = joblib.load("heart_knn_scaler.pkl")
+HEART_COLUMNS = joblib.load("heart_columns.pkl")
 
 # Diabetes models
 diabetes_lr = joblib.load("diabetes_lr_model.pkl")
